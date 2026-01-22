@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+torch
+transformers
+onnxruntime
+numpy
+kafka-python
+pymongo
+streamlit
+pandas
+altair
