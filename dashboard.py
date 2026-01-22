@@ -1,144 +1,238 @@
 import streamlit as st
-import pymongo
 import pandas as pd
+import pymongo
 import time
-from bson.objectid import ObjectId
-import datetime
-import altair as alt
+import plotly.express as px
+import plotly.graph_objects as go
+import uuid
+from datetime import datetime, timedelta
 
-st.set_page_config(page_title="🛡️ BigData Toxic Monitor", layout="wide")
+# ==========================================
+# 1. CẤU HÌNH & CSS
+# ==========================================
+st.set_page_config(page_title="Hệ thống Giám sát Toxic Real-time", layout="wide", page_icon="🛡️")
 
-# --- 1. KẾT NỐI MONGODB ---
+st.markdown("""
+<style>
+    /* Tùy chỉnh Metrics */
+    div[data-testid="stMetricValue"] {
+        font-size: 24px;
+    }
+    /* Tô màu bảng */
+    .stDataFrame {
+        border: 1px solid #e0e0e0;
+        border-radius: 5px;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# URI kết nối
+MONGO_URI = "mongodb://localhost:27017/"
+DB_NAME = "toxic_db"
+COL_NAME = "monitor_logs"
+
 @st.cache_resource
 def init_connection():
-    return pymongo.MongoClient("mongodb://localhost:27017/")
+    try:
+        client = pymongo.MongoClient(MONGO_URI, serverSelectionTimeoutMS=2000)
+        client.server_info()
+        return client
+    except Exception as e:
+        st.error(f"❌ Lỗi kết nối MongoDB: {e}")
+        return None
 
-try:
-    client = init_connection()
-    db = client["toxic_db"]
-    col = db["monitor_logs"]
-except Exception as e:
-    st.error(f"Lỗi kết nối MongoDB: {e}")
-    st.stop()
+client = init_connection()
 
-# --- 2. GLOBAL STATE (Lưu trữ dữ liệu toàn cục - Không mất khi F5) ---
-# Dùng class để bọc dữ liệu, giúp Streamlit cache object này lại
-class DataManager:
-    def __init__(self):
-        self.df = pd.DataFrame()
-        self.last_id = None
-        # Lấy mốc ID hiện tại khi khởi động server lần đầu
-        last_doc = col.find_one(sort=[("_id", -1)])
-        if last_doc:
-            self.last_id = last_doc['_id']
-        else:
-            self.last_id = ObjectId.from_datetime(datetime.datetime.now())
-        self.start_time = datetime.datetime.now()
+# ==========================================
+# 2. QUẢN LÝ TRẠNG THÁI (SESSION STATE)
+# ==========================================
+# Khởi tạo bộ nhớ phiên làm việc nếu chưa có
+if 'monitor_df' not in st.session_state:
+    st.session_state['monitor_df'] = pd.DataFrame()
+if 'last_fetch_time' not in st.session_state:
+    # Mặc định lấy dữ liệu từ thời điểm hiện tại trở đi (hoặc lùi lại 1 chút)
+    st.session_state['last_fetch_time'] = datetime.utcnow() - timedelta(seconds=10)
+if 'start_time' not in st.session_state:
+    st.session_state['start_time'] = datetime.now()
 
-    def update_data(self):
-        # Chỉ query những dòng mới hơn last_id đã lưu
-        query = {"_id": {"$gt": self.last_id}}
-        cursor = col.find(query).sort("_id", 1) # Lấy cũ -> mới để append đúng thứ tự
-        new_items = list(cursor)
+# ==========================================
+# 3. HÀM LẤY DỮ LIỆU MỚI (INCREMENTAL FETCH)
+# ==========================================
+def fetch_new_data():
+    if not client: return pd.DataFrame()
+    db = client[DB_NAME]
+    col = db[COL_NAME]
+    
+    # Chỉ lấy các bản ghi MỚI HƠN lần cập nhật cuối cùng
+    # Điều này giúp dashboard nhẹ hơn, không phải load lại cả triệu dòng
+    query = {"timestamp": {"$gt": st.session_state['last_fetch_time']}}
+    cursor = col.find(query).sort("timestamp", 1) # Lấy cũ nhất đến mới nhất để append
+    
+    new_data = list(cursor)
+    
+    if new_data:
+        df_new = pd.DataFrame(new_data)
         
-        if new_items:
-            # Cập nhật ID mới nhất
-            self.last_id = new_items[-1]['_id']
+        # Cập nhật mốc thời gian để lần sau chỉ lấy cái mới hơn nữa
+        max_time = df_new['timestamp'].max()
+        if isinstance(max_time, str):
+            max_time = pd.to_datetime(max_time)
+        st.session_state['last_fetch_time'] = max_time
+        
+        # Xử lý ID và Timezone
+        if '_id' in df_new.columns:
+            df_new['_id'] = df_new['_id'].astype(str)
             
-            # Tạo DF mới
-            new_df = pd.DataFrame(new_items)
-            new_df['fetched_at'] = datetime.datetime.now()
+        # CHUYỂN ĐỔI MÚI GIỜ (UTC -> VIETNAM UTC+7)
+        if 'timestamp' in df_new.columns:
+            df_new['timestamp'] = pd.to_datetime(df_new['timestamp']) + timedelta(hours=7)
             
-            # Gộp vào DF tổng
-            self.df = pd.concat([self.df, new_df], ignore_index=True)
-            return True # Có dữ liệu mới
-        return False
+        return df_new
+    
+    return pd.DataFrame()
 
-# @st.cache_resource đảm bảo object này chỉ tạo 1 lần duy nhất khi chạy `streamlit run`
-# Tất cả các tab trình duyệt sẽ dùng chung object này -> Dữ liệu đồng bộ
-@st.cache_resource
-def get_manager():
-    return DataManager()
+# ==========================================
+# 4. GIAO DIỆN CHÍNH
+# ==========================================
+c1, c2 = st.columns([3, 1])
+with c1:
+    st.title("🛡️ Trung tâm Giám sát Không gian mạng")
+with c2:
+    if st.button("🔄 Reset Phiên Giám sát"):
+        st.session_state['monitor_df'] = pd.DataFrame()
+        st.session_state['last_fetch_time'] = datetime.utcnow()
+        st.session_state['start_time'] = datetime.now()
+        st.rerun()
 
-manager = get_manager()
+# Hiển thị thời gian bắt đầu chạy
+st.caption(f"🚀 Phiên giám sát bắt đầu lúc: {st.session_state['start_time'].strftime('%H:%M:%S %d/%m/%Y')}")
 
-# --- 3. GIAO DIỆN ---
-st.title("🛡️ Hệ Thống Giám Sát Real-time (Global Mode)")
-st.caption(f"Server khởi động lúc: {manager.start_time.strftime('%H:%M:%S %d/%m/%Y')}")
-
-# Cập nhật dữ liệu
-has_new_data = manager.update_data()
-
-# Lấy copy dữ liệu để hiển thị
-df = manager.df.copy()
-
-# Sắp xếp mới nhất lên đầu để hiển thị
-if not df.empty:
-    df = df.sort_values(by='fetched_at', ascending=False)
-
-# --- 4. HIỂN THỊ METRICS ---
 placeholder = st.empty()
 
-with placeholder.container():
-    if not df.empty:
-        # A. THỐNG KÊ
-        total = len(df)
-        hate_df = df[df['is_hate'] == True]
-        hate_count = len(hate_df)
-        clean_count = total - hate_count
-        
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Tổng tin (Session)", total)
-        c2.metric("Phát hiện HATE", hate_count, delta_color="inverse")
-        c3.metric("Tin Sạch", clean_count)
-        
-        # B. CẢNH BÁO (5 phút gần nhất)
-        now = datetime.datetime.now()
-        recent_df = df[df['fetched_at'] > (now - datetime.timedelta(minutes=5))]
-        recent_hate = len(recent_df[recent_df['is_hate'] == True])
-        
-        if recent_hate > 10:
-            st.error(f"🚨 BÁO ĐỘNG: {recent_hate} tin độc hại trong 5 phút qua!")
-        
-        # C. BIỂU ĐỒ & BẢNG
-        tab1, tab2 = st.tabs(["📊 Biểu đồ", "📋 Log chi tiết"])
-        
-        with tab1:
-            if 'type_attack' in df.columns:
-                # Explode list type_attack ra để đếm
-                attacks = df[df['is_hate']==True]['type_attack'].explode().dropna()
-                if not attacks.empty:
-                    stats = attacks.value_counts().reset_index()
-                    stats.columns = ['Type', 'Count']
-                    
-                    chart = alt.Chart(stats).mark_bar().encode(
-                        x='Count', y=alt.Y('Type', sort='-x'), color='Type'
-                    )
-                    st.altair_chart(chart, use_container_width=True)
-                else:
-                    st.info("Chưa có loại tấn công cụ thể.")
-        
-        with tab2:
-            # Highlight
-            def style_row(row):
-                return ['background-color: #ffcccc'] * len(row) if row['is_hate'] else [''] * len(row)
+while True:
+    # 1. Lấy dữ liệu mới
+    new_df = fetch_new_data()
+    
+    # 2. Cộng dồn vào Session State
+    if not new_df.empty:
+        st.session_state['monitor_df'] = pd.concat([st.session_state['monitor_df'], new_df], ignore_index=True)
+        # Loại bỏ trùng lặp nếu có (dựa trên ID)
+        if 'id' in st.session_state['monitor_df'].columns:
+            st.session_state['monitor_df'].drop_duplicates(subset=['id'], keep='last', inplace=True)
+    
+    # Lấy DataFrame từ session ra để vẽ
+    df = st.session_state['monitor_df'].copy()
+    run_id = str(uuid.uuid4())[:8]
 
-            cols = ['cmt', 'Individual', 'Group', 'Societal', 'type_attack', 'is_hate']
-            valid_cols = [c for c in cols if c in df.columns]
+    with placeholder.container():
+        if df.empty:
+            st.info("📡 Đang lắng nghe dữ liệu mới từ Spark...")
+        else:
+            # --- A. METRICS TỔNG QUAN ---
+            total = len(df)
+            toxic_count = df['is_hate'].sum()
+            clean_count = total - toxic_count
+            toxic_ratio = (toxic_count / total) * 100
             
+            # Layout 4 cột chỉ số chính
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Tổng tin đã quét", f"{total:,}", delta="Real-time")
+            m2.metric("Tin Độc hại", f"{toxic_count:,}", f"{toxic_ratio:.1f}%", delta_color="inverse")
+            m3.metric("Tin Sạch", f"{clean_count:,}", delta_color="normal")
+            
+            # Đếm loại tấn công phổ biến nhất
+            all_types = []
+            if 'type_attack' in df.columns:
+                for x in df['type_attack']:
+                    if isinstance(x, list): all_types.extend(x)
+            top_type = max(set(all_types), key=all_types.count) if all_types else "N/A"
+            m4.metric("Loại tấn công Top 1", top_type)
+
+            st.markdown("---")
+
+            # --- B. THỐNG KÊ CHI TIẾT (TARGETS & TYPES) ---
+            col_types, col_targets = st.columns([1.5, 1])
+            
+            with col_types:
+                st.subheader("📊 Phân bố Loại hình Tấn công (Type Attack)")
+                if all_types:
+                    type_counts = pd.Series(all_types).value_counts().reset_index()
+                    type_counts.columns = ['Loại tấn công', 'Số lượng']
+                    
+                    fig_bar = px.bar(
+                        type_counts, 
+                        x='Số lượng', y='Loại tấn công', 
+                        orientation='h', 
+                        text='Số lượng',
+                        color='Số lượng',
+                        color_continuous_scale='Reds'
+                    )
+                    fig_bar.update_layout(height=350, margin=dict(l=0, r=0, t=0, b=0))
+                    st.plotly_chart(fig_bar, use_container_width=True, key=f"bar_{run_id}")
+                else:
+                    st.info("Chưa phát hiện loại tấn công cụ thể.")
+
+            with col_targets:
+                st.subheader("🎯 Mục tiêu Tấn công (ViTHSD)")
+                # Lọc ra các nhãn nguy hiểm để đếm
+                dangerous = ['Offensive', 'Hate']
+                
+                targets_data = {
+                    "Cá nhân": df[df['Individual'].isin(dangerous)].shape[0] if 'Individual' in df.columns else 0,
+                    "Nhóm/Tổ chức": df[df['Group'].isin(dangerous)].shape[0] if 'Group' in df.columns else 0,
+                    "Xã hội": df[df['Societal'].isin(dangerous)].shape[0] if 'Societal' in df.columns else 0
+                }
+                
+                # Vẽ biểu đồ Radar hoặc Bar đơn giản cho Target
+                fig_target = go.Figure(data=[go.Pie(
+                    labels=list(targets_data.keys()), 
+                    values=list(targets_data.values()), 
+                    hole=.5,
+                    marker_colors=['#FF9999', '#FF6666', '#FF0000']
+                )])
+                fig_target.update_layout(height=350, margin=dict(l=0, r=0, t=30, b=0), title_text="Tỷ lệ Mục tiêu")
+                st.plotly_chart(fig_target, use_container_width=True, key=f"target_{run_id}")
+
+            # --- C. BIỂU ĐỒ DIỄN BIẾN THEO THỜI GIAN ---
+            st.subheader("📈 Diễn biến Tấn công theo Thời gian")
+            if 'timestamp' in df.columns and not df.empty:
+                df_time = df.copy()
+                # Gom nhóm theo từng phút
+                df_time['time_min'] = df_time['timestamp'].dt.floor('1min')
+                
+                time_agg = df_time.groupby('time_min').agg(
+                    Tin_Doc_Hai=('is_hate', 'sum'),
+                    Tong_Tin=('id', 'count')
+                ).reset_index()
+                
+                fig_line = px.area(time_agg, x='time_min', y=['Tong_Tin', 'Tin_Doc_Hai'],
+                                   labels={'value': 'Số lượng tin', 'time_min': 'Thời gian'},
+                                   color_discrete_map={'Tong_Tin': '#cfd8dc', 'Tin_Doc_Hai': '#ff5252'})
+                fig_line.update_layout(height=300, margin=dict(l=0, r=0, t=0, b=0), hovermode="x unified")
+                st.plotly_chart(fig_line, use_container_width=True, key=f"line_{run_id}")
+
+            # --- D. LOGS CHI TIẾT ---
+            st.subheader("📝 Nhật ký Giám sát (Mới nhất lên đầu)")
+            
+            # Sắp xếp mới nhất lên đầu để dễ theo dõi
+            df_show = df.sort_values(by='timestamp', ascending=False).head(100)
+            
+            cols = ['timestamp', 'cmt', 'type_attack', 'Individual', 'Group', 'Societal']
+            cols = [c for c in cols if c in df_show.columns]
+            
+            def style_row(row):
+                color = '#ffebee' if row.get('is_hate') else '#e8f5e9'
+                return [f'background-color: {color}'] * len(row)
+
             st.dataframe(
-                df[valid_cols].style.apply(style_row, axis=1),
-                column_config={
-                    "type_attack": st.column_config.ListColumn("Loại"),
-                    "is_hate": st.column_config.CheckboxColumn("Toxic?", disabled=True)
-                },
+                df_show[cols].style.apply(style_row, axis=1),
                 use_container_width=True,
-                height=600
+                height=400,
+                column_config={
+                    "timestamp": st.column_config.DatetimeColumn("Thời gian", format="HH:mm:ss DD/MM"),
+                    "type_attack": "Loại tấn công",
+                    "cmt": "Nội dung bình luận"
+                }
             )
             
-    else:
-        st.info("⏳ Đang chờ dữ liệu đầu tiên...")
-
-# Tự động refresh sau 1 giây
-time.sleep(1)
-st.rerun()
+    time.sleep(1)
