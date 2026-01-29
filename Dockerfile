@@ -5,7 +5,7 @@ FROM apache/spark:3.4.1
 USER root
 
 # Cài đặt thư viện requests (quan trọng)
-RUN pip install requests pymongo
+RUN pip install requests pymongo datetime pyvi openpyxl pandas 
 
 # Thiết lập thư mục làm việc
 WORKDIR /app

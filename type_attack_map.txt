@@ -1,0 +1,25 @@
+const categoryMap = {
+  1: "Threat",
+  2: "Scam",
+  3: "Misinformation",
+  4: "Boycott",
+  5: "Body Shaming",
+  6: "Sexual Harassment",
+  7: "Intelligence",
+  8: "Moral",
+  9: "Victim Blaming",
+  10: "Gender",
+  11: "Regionalism",
+  12: "Racism",
+  13: "Classism",
+  14: "Religion",
+  15: "Politics",
+  16: "Social Issues",
+  17: "Product",
+  18: "Community",
+  19: "Other"
+};
+
+docker exec -it spark-master bash
+# Bên trong docker:
+/opt/spark/bin/spark-submit --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.4.1,org.mongodb.spark:mongo-spark-connector_2.12:10.2.1 /app/code/spark_streaming.py

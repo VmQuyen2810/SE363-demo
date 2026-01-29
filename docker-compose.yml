@@ -36,6 +36,7 @@ services:
     command: "/opt/spark/bin/spark-class org.apache.spark.deploy.master.Master"
     volumes:
       - ./spark_code:/app/code
+      - ./teencode.xlsx:/app/teencode.xlsx
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:

@@ -20,7 +20,6 @@ Mục tiêu: xây dựng pipeline xử lý dữ liệu streaming với Spark Str
 
 ```bash
 docker-compose up -d --build
-docker exec -it spark-master bash
 ```
 
 ### 2. Cài đặt môi trường local 
@@ -32,7 +31,7 @@ pip install -r requirements.txt
 ### 3. Chạy Spark Streaming job
 
 ```bash
-/opt/spark/bin/spark-submit --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.4.1,org.mongodb.spark:mongo-spark-connector_2.12:10.2.1 /app/code/spark_streaming.py
+docker exec -it spark-master /opt/spark/bin/spark-submit --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.4.1,org.mongodb.spark:mongo-spark-connector_2.12:10.2.1 /app/code/spark_streaming.py
 ```
 ### 4. Chạy server
 ```bash
