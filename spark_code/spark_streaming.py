@@ -15,14 +15,36 @@ API_URL = "http://host.docker.internal:8000/predict_batch"
 MONGO_URI = "mongodb://mongodb:27017/"
 DB_NAME = "hatespeech_db"
 COL_NAME = "monitor_logs"
-TEENCODE_PATH = "/app/teencode.xlsx" # Đường dẫn file trong Docker (do đã mount ở bước 1)
+TEENCODE_PATH = "/app/teencode.xlsx" # Đường dẫn file trong Docker 
 
-# --- BIẾN TOÀN CỤC (CACHE TRÊN WORKER) ---
-# Biến này giúp Worker chỉ đọc file Excel 1 lần duy nhất khi khởi động, 
-# không phải đọc lại từng dòng tin nhắn -> Tối ưu tốc độ cực cao.
+def init_system_resources():
+    """
+    Hàm này chạy 1 lần duy nhất khi Spark Driver khởi động.
+    Nhiệm vụ: Tạo Index cho MongoDB để Dashboard query nhanh.
+    """
+    print("Initializing System Resources...")
+    try:
+        # Kết nối Mongo
+        client = pymongo.MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+        db = client[DB_NAME]
+        col = db[COL_NAME]
+        
+        # 1. Tạo Index cho timestamp giảm dần 
+        col.create_index([("timestamp", pymongo.DESCENDING)], background=True)
+        print("✅ MongoDB Index created: timestamp_desc")
+        
+        # 2. Tạo Index cho id để tránh trùng lặp
+        col.create_index([("id", pymongo.ASCENDING)], unique=True, background=True)
+        print("✅ MongoDB Index created: id_unique")
+        
+        client.close()
+    except Exception as e:
+        print(f"⚠️ Warning: Could not init MongoDB indexes. Error: {e}")
+
+# --- BIẾN TOÀN CỤC ---
 GLOBAL_TEENCODE_DICT = None 
 
-# 1. Stopwords (Giữ nguyên hoặc load từ file tương tự teencode)
+# 1. Stopwords
 VIETNAMESE_STOPWORDS = set([
     "bị", "bởi", "cả", "các", "cái", "cần", "càng", "chỉ", "chiếc", "cho", "chứ", "chưa", "chuyện",
     "có", "có_thể", "cứ", "của", "cùng", "cũng", "đã", "đang", "đây", "để", "đến_nỗi", "đều", "điều",
@@ -45,7 +67,7 @@ def get_teencode_dict():
         try:
             if os.path.exists(TEENCODE_PATH):
                 df = pd.read_excel(TEENCODE_PATH) 
-                # Convert thành dictionary { 'mk': 'mình', ... }
+                # Convert thành dictionary 
                 GLOBAL_TEENCODE_DICT = dict(zip(df.iloc[:, 0].astype(str), df.iloc[:, 1].astype(str)))
                 print("Loaded Teencode File Successfully!")
             else:
@@ -93,7 +115,7 @@ def process_partition(iterator):
         db = client[DB_NAME]
         col_mongo = db[COL_NAME]
     except Exception as e:
-        print(f"❌ Mongo Connection Error: {e}")
+        print(f" Mongo Connection Error: {e}")
         return iter([])
 
     rows = list(iterator)
@@ -101,7 +123,6 @@ def process_partition(iterator):
 
     batch_payload = []
     # Map lưu thông tin để join lại sau khi có kết quả API
-    # Key: ID, Value: {raw: cmt gốc, processed: cmt đã xử lý}
     data_map = {} 
 
     for row in rows:
@@ -121,12 +142,12 @@ def process_partition(iterator):
     if not batch_payload: return iter([])
 
     # Gửi API theo batch
-    chunk_size = 32
+    chunk_size = 128
     for i in range(0, len(batch_payload), chunk_size):
         chunk = batch_payload[i:i+chunk_size]
         try:
             # Gửi cmt_processed lên API
-            resp = requests.post(API_URL, json={"batch": chunk}, timeout=15)
+            resp = requests.post(API_URL, json={"batch": chunk}, timeout=60)
             
             if resp.status_code == 200:
                 api_res = resp.json().get("results", [])
@@ -178,10 +199,13 @@ def process_partition(iterator):
     return iter([])
 
 def main():
+    init_system_resources()
+
     spark = SparkSession.builder \
         .appName("ToxicStreamRealTime") \
         .config("spark.executor.instances", "2") \
         .config("spark.executor.cores", "2") \
+        .config("spark.sql.shuffle.partitions", "4") \
         .getOrCreate()
     spark.sparkContext.setLogLevel("WARN")
 
@@ -192,7 +216,7 @@ def main():
             .option("subscribe", "demo_topic") 
             .option("startingOffsets", "latest") 
             .option("failOnDataLoss", "false") 
-            .option("maxOffsetsPerTrigger", 200)  
+            .option("maxOffsetsPerTrigger", 1000)  
             .load()
     )
 
@@ -206,7 +230,7 @@ def main():
 
     query = parsed.writeStream \
         .foreachBatch(process_batch_wrapper) \
-        .trigger(processingTime='1.5 seconds') \
+        .trigger(processingTime='1 seconds') \
         .start()
 
     query.awaitTermination()

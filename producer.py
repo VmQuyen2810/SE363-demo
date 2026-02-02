@@ -16,36 +16,33 @@ def json_serializer(data):
 try:
     producer = KafkaProducer(
         bootstrap_servers=[KAFKA_BROKER],
-        value_serializer=json_serializer
+        value_serializer=json_serializer,
+        api_version=(0, 10, 1)
     )
-    print(f"✅ Connected to Kafka at {KAFKA_BROKER}")
+    print(f" Connected to Kafka at {KAFKA_BROKER}")
 except Exception as e:
-    print(f"❌ Failed to connect to Kafka: {e}")
+    print(f" Failed to connect to Kafka: {e}")
     exit()
 
 # 2. Đọc Data
 try:
     df = pd.read_excel(DATA_FILE) 
-    print(f"📂 Loaded {len(df)} comments from {DATA_FILE}")
+    print(f"📂 Loaded {len(df)} comments")
 except Exception as e:
-    print(f"⚠️ Could not load file '{DATA_FILE}'. Using dummy data instead.")
-    # Tạo data giả nếu không có file
+    print(f"⚠️ Load file error, using dummy data.")
     df = pd.DataFrame({'cmt': ['Test comment'] * 1000})
 
-# 3. XÁO TRỘN DỮ LIỆU (RANDOM)
-# frac=1 nghĩa là lấy 100% dữ liệu nhưng xáo trộn ngẫu nhiên
+# 3. XÁO TRỘN DỮ LIỆU 
 df = df.sample(frac=1).reset_index(drop=True)
-print("🔀 Data has been randomized!")
+print("Data has been randomized!")
 
-# 4. Gửi tin với logic Tăng Tốc
-print("🚀 Starting Stream...")
+# 4. Gửi tin với kịch bản BURST
+print(" Starting Stream...")
 start_time_stream = time.time()
 
 try:
     for index, row in df.iterrows():
         comment_text = str(row.get('cmt', row.get('cmt_processed', 'No content')))
-        
-        # ID ngắn gọn (8 ký tự)
         short_id = str(uuid.uuid4())[:8]
         
         message = {
@@ -56,23 +53,27 @@ try:
         
         producer.send(TOPIC_NAME, value=message)
         
-        # --- LOGIC ĐIỀU CHỈNH TỐC ĐỘ ---
+        # --- LOGIC ĐIỀU CHỈNH TỐC ĐỘ (SCENARIO) ---
         elapsed = time.time() - start_time_stream
         
-        if elapsed < 20:
-            # Giai đoạn 1: Chạy chậm để demo (10 tin/giây)
-            delay = 0.1
-            status = "NORMAL"
+        # Kịch bản:
+        # 0s - 20s: Bình thường (Delay 0.1s ~ 10 tin/s)
+        # 20s - 30s: TẤN CÔNG (Delay 0.005s ~ 200 tin/s)
+        # > 30s   : Bình thường lại
+        
+        if 20 <= elapsed <= 30:
+            delay = 0.005  
+            status = "ATTACK"
         else:
-            # Giai đoạn 2: Tăng tốc tối đa (200 tin/giây)
-            delay = 0.005 
-            status = "TURBO 🔥"
+            delay = 0.1    
+            status = "NORMAL"
 
-        print(f"[{status}] Sent {index} | ID={short_id} | Time={elapsed:.1f}s")
+        if index % 10 == 0: # Chỉ in mỗi 10 tin để đỡ spam console
+            print(f"[{status}] Time: {elapsed:.1f}s | Sent {index} msg")
         
         time.sleep(delay)
         
 except KeyboardInterrupt:
-    print("\n🛑 Stopped by user.")
+    print("\nStopped by user.")
 finally:
     producer.close()
