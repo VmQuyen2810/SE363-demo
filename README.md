@@ -1,108 +1,104 @@
-SE363 - Big Data Streaming Demo
-Dự án Demo môn học Big Data (SE363) xây dựng pipeline xử lý dữ liệu thời gian thực phát hiện ngôn từ thù ghét .
+# SE363 - Big Data Streaming Demo
 
-Kiến trúc hệ thống:
+Dự án Demo môn học Big Data (SE363) xây dựng pipeline xử lý dữ liệu thời gian thực (Real-time Streaming) phát hiện ngôn từ thù ghét (Hate Speech).
 
-Infrastructure (Docker): Apache Kafka, Zookeeper, MongoDB, Apache Spark (Master & Worker).
+## Kiến trúc hệ thống
 
-Application (Local): Producer giả lập dữ liệu, Model Server, và Dashboard giám sát.
+Dự án được chia thành 2 phần chính hoạt động song song:
 
- Công nghệ sử dụng
-Message Queue: Apache Kafka
+* **Infrastructure (Docker):** Chứa các dịch vụ hạ tầng gồm Apache Kafka, Zookeeper, MongoDB, Apache Spark (Master & Worker).
+* **Application (Local):** Chứa mã nguồn ứng dụng chạy trên máy host gồm Producer giả lập dữ liệu, Model Server (AI), và Dashboard giám sát.
 
-Processing Engine: Apache Spark Structured Streaming
+## Công nghệ sử dụng
 
-Storage: MongoDB
+* **Message Queue:** Apache Kafka
+* **Processing Engine:** Apache Spark Structured Streaming
+* **Storage:** MongoDB
+* **Model Serving:** FastAPI
+* **Visualization:** Streamlit
+* **Containerization:** Docker & Docker Compose
 
-Model Serving: FastAPI 
+## Cài đặt và Chuẩn bị
 
-Visualization: Streamlit
+Trước khi chạy hệ thống, hãy đảm bảo máy tính đã cài đặt:
+* Docker Desktop
+* Python 3.8 trở lên
 
-Containerization: Docker & Docker Compose
+### 1. Khởi động Hạ tầng (Docker)
 
- Cài đặt & Chuẩn bị
-Trước khi chạy, hãy đảm bảo bạn đã cài đặt:
+Bước này sẽ khởi chạy các container Kafka, MongoDB và Spark Cluster.
 
-Docker Desktop
-
-Python 3.8+
-
-1. Khởi động Hạ tầng (Docker)
-Bước này sẽ khởi chạy Kafka, MongoDB và Spark Cluster.
-
-bash
-```
+```bash
 docker-compose up -d --build
 ```
-Lưu ý: Đợi khoảng 30s-1p để các container (đặc biệt là Kafka và Spark) khởi động hoàn toàn.
 
-2. Thiết lập Môi trường ảo (Local)
-Vì các file producer.py, dashboard.py, và model_server.py chạy trên máy thật (Host), bạn cần cài đặt thư viện cho chúng.
+### 2. Thiết lập Môi trường ảo (Local)
 
-bash
-```
+Vì các file ứng dụng chạy trên máy thật (Host), bạn cần cài đặt thư viện Python cho chúng.
+
+```bash
 # Tạo môi trường ảo (nếu chưa có)
 python -m venv venv
 
 # Kích hoạt môi trường ảo
-# Windows:
+# Đối với Windows:
 .\venv\Scripts\activate
+# Đối với Linux/MacOS:
+source venv/bin/activate
 
 # Cài đặt các thư viện cần thiết
 pip install -r requirements.txt
-
 ```
 
- Hướng dẫn chạy hệ thống 
-Để hệ thống hoạt động trơn tru, hãy mở 4 Terminal khác nhau và thực hiện lần lượt:
+### Hướng dẫn chạy hệ thống
+Để hệ thống hoạt động trơn tru, hãy mở 4 Terminal khác nhau và thực hiện lần lượt theo thứ tự sau:
 
-Terminal 1: Chạy Model Server
+#### Terminal 1: Chạy Model Server
+Server này cung cấp API để Spark gọi sang dự đoán nhãn (Toxic/Clean).
 
-bash
-```
+
+```bash
 # Đảm bảo đã kích hoạt venv
-# Windows: .\venv\Scripts\activate
-
 uvicorn model_server:app --host 0.0.0.0 --port 8000 --reload
 ```
+
 Server sẽ chạy tại: http://localhost:8000
 
-Terminal 2: Submit Spark Job (Docker)
-Submit job vào Spark Container để bắt đầu lắng nghe dữ liệu từ Kafka.
+#### Terminal 2: Submit Spark Job (Docker)
+Submit job vào Spark Container để bắt đầu lắng nghe dữ liệu từ Kafka, xử lý qua Model Server và ghi xuống MongoDB.
 
-bash
-```
+
+```bash
 docker exec -it spark-master /opt/spark/bin/spark-submit \
   --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.4.1,org.mongodb.spark:mongo-spark-connector_2.12:10.2.1 \
   /app/code/spark_streaming.py
-
+  
 ```
-Terminal 3: Chạy Dashboard (Local)
-Giao diện giám sát dữ liệu và cảnh báo theo thời gian thực.
-
-bash
-```
+#### Terminal 3: Chạy Dashboard (Local)
+Giao diện giám sát dữ liệu và hiển thị cảnh báo theo thời gian thực.
+```bash
 # Đảm bảo đã kích hoạt venv
 streamlit run dashboard.py
 ```
 Dashboard sẽ tự động mở trên trình duyệt (thường là http://localhost:8501)
 
-Terminal 4: Chạy Producer (Local)
+#### Terminal 4: Chạy Producer (Local)
 Bắt đầu bắn dữ liệu giả lập vào Kafka để hệ thống xử lý.
-
-bash
-```
+```bash
 # Đảm bảo đã kích hoạt venv
 python producer.py
 ```
-📂 Cấu trúc thư mục
+```bash
 SE363-demo/
 ├── Dockerfile
-├── docker-compose.yml       # Cấu hình Kafka, Spark, Mongo
-├── requirements.txt         # Thư viện Python cho Local
-├── spark_code/spark_streaming.py       # Code xử lý chính 
-├── model_server.py          # API Server
-├── producer.py              # Giả lập gửi tin nhắn
-├── dashboard.py             # Giao diện Streamlit
-├── chat/demo.xlsx                # Dữ liệu mẫu
-├── teencode.xlsx
+├── docker-compose.yml           # Cấu hình hạ tầng Kafka, Spark, Mongo
+├── requirements.txt             # Danh sách thư viện Python cho Local
+├── spark_code/
+│   └── spark_streaming.py       # Code xử lý chính của Spark
+├── model_server.py              # API Server (FastAPI)
+├── producer.py                  # Script giả lập gửi tin nhắn vào Kafka
+├── dashboard.py                 # Giao diện giám sát (Streamlit)
+├── chat/
+│   └── demo.xlsx                # Dữ liệu mẫu đầu vào
+└── teencode.xlsx                # Từ điển hỗ trợ xử lý text
+```
