@@ -60,7 +60,7 @@ if 'last_fetch_time' not in st.session_state:
 if 'start_time' not in st.session_state:
     st.session_state['start_time'] = datetime.now()
 
-# 3. HÀM LẤY DỮ LIỆU MỚI TỪ MONGODB
+# 3. HÀM LẤY DỮ LIỆU
 def fetch_new_data():
     if not client: return pd.DataFrame()
     db = client[DB_NAME]
@@ -84,7 +84,7 @@ def fetch_new_data():
 
 # 4. GIAO DIỆN CHÍNH
 c1, c2 = st.columns([3, 1])
-with c1: st.title("Giám sát Hate Speech ️")
+with c1: st.title(" Giám sát ngôn từ Thù ghét thời gian thực")
 with c2:
     if st.button("Reset"):
         st.session_state['monitor_df'] = pd.DataFrame()
@@ -92,7 +92,7 @@ with c2:
         st.session_state['start_time'] = datetime.now()
         st.rerun()
 
-st.caption(f" Bắt đầu lúc: {st.session_state['start_time'].strftime('%H:%M:%S %d/%m/%Y')}")
+st.caption(f"Bắt đầu lúc: {st.session_state['start_time'].strftime('%H:%M:%S %d/%m/%Y')}")
 alert_placeholder = st.empty() 
 placeholder = st.empty()
 
@@ -106,43 +106,54 @@ while True:
     df = st.session_state['monitor_df'].copy()
     run_id = str(uuid.uuid4())[:8]
 
-    # --- LOGIC CẢNH BÁO (ALERT SYSTEM) ---
+# --- LOGIC CẢNH BÁO  ---
     is_under_attack = False
     toxic_velocity = 0
+    increase_pct = 0
     
+    # Cấu hình ngưỡng 
+    WINDOW_SECONDS = 3       # Chỉ xét 3 giây gần nhất để nhạy với Burst
+    BASELINE_RATE = 2.0      # Mức bình thường 
+    ALERT_THRESHOLD = 5.0    # Ngưỡng báo động (lớn hơn mức bình thường gấp đôi)
+
     if not df.empty and 'timestamp' in df.columns:
-        # Lấy thời gian hiện tại (Server time)
         now = datetime.now()
-        # Lọc các tin trong 10 giây gần nhất
-        recent_df = df[df['timestamp'] >= (now - timedelta(seconds=10))]
+        # Lấy dữ liệu trong cửa sổ trượt
+        recent_df = df[df['timestamp'] >= (now - timedelta(seconds=WINDOW_SECONDS))]
         
         if not recent_df.empty:
-            # Đếm số lượng tin Toxic trong 10s qua
-            toxic_recent = recent_df['is_hate'].sum()
-            total_recent = len(recent_df)
+            # Tính số lượng toxic thực tế trong cửa sổ
+            toxic_count_window = recent_df['is_hate'].sum()
             
-            # Tiêu chí cảnh báo: Có trên 20 tin Toxic trong 10s VÀ Tỷ lệ Toxic > 50%
-            if toxic_recent > 20: 
+            # Tính tốc độ trung bình (Tin toxic / giây)
+            current_rate = toxic_count_window / WINDOW_SECONDS
+            
+            # Kiểm tra điều kiện tấn công
+            if current_rate > ALERT_THRESHOLD:
                 is_under_attack = True
-                toxic_velocity = toxic_recent / 10.0 # tin/giây
+                toxic_velocity = current_rate
+                # Tính % tăng trưởng so với mức nền
+                increase_pct = ((current_rate - BASELINE_RATE) / BASELINE_RATE) * 100
 
     # Hiển thị Cảnh báo
     with alert_placeholder.container():
         if is_under_attack:
             st.markdown(f"""
             <div class="alert-box">
-                CẢNH BÁO: PHÁT HIỆN SỐ LƯỢNG NGÔN TỪ THÙ GHÉT TẤN CÔNG CAO BẤT THƯỜNG! <br>
-                Tốc độ: {toxic_velocity:.1f} tin/giây
+                CẢNH BÁO: PHÁT HIỆN TẤN CÔNG BẤT THƯỜNG! <br>
+                Tốc độ lây lan: {toxic_velocity:.1f} tin toxic/s <br>
+                <span style="font-size: 16px; color: #ffcccc;">
+                    (Tăng trưởng đột biến: +{increase_pct:.0f}% so với mức ổn định)
+                </span>
             </div>
             """, unsafe_allow_html=True)
         else:
-            st.empty() 
-
+            st.empty()
     with placeholder.container():
         if df.empty:
             st.info(" Đang kết nối...")
         else:
-            # METRICS
+            # --- METRICS ---
             total = len(df)
             toxic_count = df['is_hate'].sum()
             clean_count = total - toxic_count
@@ -153,6 +164,7 @@ while True:
             m2.metric("Độc hại", f"{toxic_count:,}", f"{toxic_ratio:.1f}%", delta_color="inverse")
             m3.metric("Sạch", f"{clean_count:,}")
             
+            # Tính toán Type Attack (để dùng cho metric và biểu đồ)
             all_types = []
             if 'type_attack' in df.columns:
                 for x in df['type_attack']:
@@ -162,31 +174,50 @@ while True:
 
             st.markdown("---")
 
-            # CHARTS
-            col_chart1, col_chart2 = st.columns([2, 1])
+            # --- CHARTS ---
             
-            with col_chart1:
-                st.subheader("📈 Lưu lượng Tấn công (Real-time)")
-                if 'timestamp' in df.columns:
-                    # Gom nhóm theo từng 5 giây để thấy rõ đỉnh (Peak) tấn công
-                    df_trend = df.copy()
-                    df_trend['time_block'] = df_trend['timestamp'].dt.floor('5s')
-                    
-                    trend_data = df_trend.groupby('time_block')['is_hate'].sum().reset_index()
-                    
-                    fig = px.area(trend_data, x='time_block', y='is_hate', 
-                                  title="Số lượng tin Toxic (theo mỗi 5s)",
-                                  labels={'is_hate': 'Toxic Count', 'time_block': 'Time'},
-                                  color_discrete_sequence=['#ff4b4b'])
-                    
-                    # Highlight vùng nguy hiểm
-                    fig.add_hrect(y0=10, y1=100, line_width=0, fillcolor="red", opacity=0.1, annotation_text="Vùng Nguy Hiểm")
-                    
-                    fig.update_layout(height=350, margin=dict(l=0, r=0, t=30, b=0))
-                    st.plotly_chart(fig, use_container_width=True, key=f"trend_{run_id}")
+            # Tầng 1: Biểu đồ thời gian 
+            st.subheader("Lưu lượng ngôn từ thù ghét (Real-time)")
+            if 'timestamp' in df.columns:
+                df_trend = df.copy()
+                df_trend['time_block'] = df_trend['timestamp'].dt.floor('5s')
+                trend_data = df_trend.groupby('time_block')['is_hate'].sum().reset_index()
+                
+                fig = px.area(trend_data, x='time_block', y='is_hate', 
+                              labels={'is_hate': 'Toxic Count', 'time_block': 'Time'},
+                              color_discrete_sequence=['#ff4b4b'])
+                fig.add_hrect(y0=0, y1=50, line_width=0, fillcolor="red", opacity=0.1)
+                fig.update_layout(height=300, margin=dict(l=0, r=0, t=0, b=0))
+                st.plotly_chart(fig, use_container_width=True, key=f"trend_{run_id}")
 
-            with col_chart2:
-                st.subheader("🎯 Mục tiêu")
+            st.markdown("<br>", unsafe_allow_html=True) # Khoảng cách
+
+            # Tầng 2: Chia 2 cột cho Type Attack và Target
+            col_chart_left, col_chart_right = st.columns([1.5, 1])
+            
+            # Biểu đồ Loại hình Tấn công 
+            with col_chart_left:
+                st.subheader("Phân bố Loại hình Tấn công ngôn từ thù ghét")
+                if all_types:
+                    type_counts = pd.Series(all_types).value_counts().reset_index()
+                    type_counts.columns = ['Loại tấn công', 'Số lượng']
+                    
+                    fig_bar = px.bar(
+                        type_counts, 
+                        x='Số lượng', y='Loại tấn công', 
+                        orientation='h', 
+                        text='Số lượng',
+                        color='Số lượng',
+                        color_continuous_scale='Reds'
+                    )
+                    fig_bar.update_layout(height=350, margin=dict(l=0, r=0, t=0, b=0))
+                    st.plotly_chart(fig_bar, use_container_width=True, key=f"bar_{run_id}")
+                else:
+                    st.info("Chưa phát hiện loại tấn công cụ thể.")
+
+            # Biểu đồ Mục tiêu (Pie Chart)
+            with col_chart_right:
+                st.subheader("Mục tiêu")
                 dg = ['Offensive', 'Hate']
                 t_data = {
                     "Cá nhân": df[df['Individual'].isin(dg)].shape[0] if 'Individual' in df.columns else 0,
@@ -194,14 +225,14 @@ while True:
                     "Xã hội": df[df['Societal'].isin(dg)].shape[0] if 'Societal' in df.columns else 0
                 }
                 fig = go.Figure(data=[go.Pie(labels=list(t_data.keys()), values=list(t_data.values()), hole=.5)])
-                fig.update_layout(height=350, margin=dict(l=0, r=0, t=30, b=0), showlegend=False)
+                fig.update_layout(height=350, margin=dict(l=0, r=0, t=30, b=0), showlegend=True)
                 st.plotly_chart(fig, use_container_width=True, key=f"pie_{run_id}")
 
-            # DATA TABLE
+            # --- DATA TABLE ---
             st.subheader("Live Logs")
-            df_show = df.sort_values(by='timestamp', ascending=False).head(50) # Giảm xuống 50 cho nhẹ
+            df_show = df.sort_values(by='timestamp', ascending=False).head(50)
             
-            cols = ['timestamp', 'cmt', 'type_attack', 'Individual', 'Group', 'Societal']
+            cols = ['timestamp', 'cmt', 'cmt_processed', 'type_attack', 'Individual', 'Group', 'Societal']
             cols = [c for c in cols if c in df_show.columns]
             
             def style_row(row):
@@ -211,10 +242,35 @@ while True:
             st.dataframe(
                 df_show[cols].style.apply(style_row, axis=1),
                 use_container_width=True,
-                height=400,
+                height=500,
                 column_config={
-                    "timestamp": st.column_config.DatetimeColumn("Thời gian", format="HH:mm:ss"),
-                    "cmt": st.column_config.TextColumn("Nội dung", width="large"),
+                    # 1. Cột Thời gian: Giảm nhỏ nhất có thể
+                    "timestamp": st.column_config.DatetimeColumn(
+                        "Thời gian", 
+                        format="HH:mm:ss", 
+                        width="small"
+                    ),
+                    
+                    # 2. Hai cột nội dung: Tăng kích thước (Large)
+                    "cmt": st.column_config.TextColumn(
+                        "Bình luận gốc", 
+                        width="large"
+                    ),
+                    "cmt_processed": st.column_config.TextColumn(
+                        "Bình luận xử lý", 
+                        width="large"
+                    ),
+                    
+                    # 3. Cột Type Attack: Tăng kích thước để hiển thị hết các thẻ
+                    "type_attack": st.column_config.ListColumn(
+                        "Loại tấn công", 
+                        width="650px"
+                    ),
+                    
+                    # 4. Ba cột Nhãn: Giảm kích thước (Small) vì nội dung chỉ là text ngắn
+                    "Individual": st.column_config.TextColumn("Cá nhân", width="small"),
+                    "Group": st.column_config.TextColumn("Tổ chức", width="small"),
+                    "Societal": st.column_config.TextColumn("Xã hội", width="small"),
                 }
             )
             

@@ -27,9 +27,9 @@ except Exception as e:
 # 2. Đọc Data
 try:
     df = pd.read_excel(DATA_FILE) 
-    print(f"📂 Loaded {len(df)} comments")
+    print(f"Loaded {len(df)} comments")
 except Exception as e:
-    print(f"⚠️ Load file error, using dummy data.")
+    print(f"Load file error, using dummy data.")
     df = pd.DataFrame({'cmt': ['Test comment'] * 1000})
 
 # 3. XÁO TRỘN DỮ LIỆU 
@@ -58,17 +58,17 @@ try:
         
         # Kịch bản:
         # 0s - 20s: Bình thường (Delay 0.1s ~ 10 tin/s)
-        # 20s - 30s: TẤN CÔNG (Delay 0.005s ~ 200 tin/s)
+        # 20s - 30s: TẤN CÔNG (Delay 0.008s ~ 125 tin/s)
         # > 30s   : Bình thường lại
         
         if 20 <= elapsed <= 30:
-            delay = 0.005  
+            delay = 0.008
             status = "ATTACK"
         else:
             delay = 0.1    
             status = "NORMAL"
 
-        if index % 10 == 0: # Chỉ in mỗi 10 tin để đỡ spam console
+        if index % 10 == 0: 
             print(f"[{status}] Time: {elapsed:.1f}s | Sent {index} msg")
         
         time.sleep(delay)

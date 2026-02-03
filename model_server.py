@@ -9,9 +9,7 @@ import uvicorn
 import os
 import time
 
-# ==========================================
 # 1. CẤU HÌNH & MODEL
-# ==========================================
 class Config:
     BERT_NAME = "local_phobert" 
     HIDDEN_SIZE = 768
@@ -20,7 +18,7 @@ class Config:
     CNN_FILTERS = 64
     CNN_KERNEL_SIZES = [2, 3, 4]
 
-# --- Model 1: ViTHSD ---
+# --- Model 1: THSD ---
 class PhoBertHybridModel(nn.Module):
     def __init__(self, config):
         super(PhoBertHybridModel, self).__init__()
@@ -43,7 +41,6 @@ class PhoBertHybridModel(nn.Module):
         cls_embedding = bert_out[:, 0, :] 
         
         gru_out, _ = self.gru(bert_out)
-        # Pooling: Logic đơn giản hóa cho JIT ổn định
         gru_pool = torch.max(gru_out, dim=1)[0]
         
         cnn_in = bert_out.permute(0, 2, 1)
@@ -77,13 +74,9 @@ class TypeAttackHead(nn.Module):
     def forward(self, x):
         return self.net(x)
 
-# ==========================================
-# 2. SERVER SETUP (TỐI ƯU CPU)
-# ==========================================
+# 2. SERVER SETUP 
 app = FastAPI()
 device = torch.device("cpu") 
-
-# Tối ưu luồng: Tận dụng tối đa core vật lý (thường là 8-16) cho 1 process duy nhất
 torch.set_num_threads(8) 
 
 resources = {}
@@ -166,7 +159,7 @@ async def predict_batch(req: BatchRequest):
         tokenizer = resources["tokenizer"]
         model1 = resources["model_1"]
         
-        # Tokenize: Max length 60 là đủ cho cmt, tăng tốc đáng kể
+        # Tokenize: Max length 60 
         inputs = tokenizer(texts, return_tensors="pt", truncation=True, padding=True, max_length=60)
         input_ids = inputs["input_ids"].to(device)
         attn_mask = inputs["attention_mask"].to(device)
@@ -183,7 +176,7 @@ async def predict_batch(req: BatchRequest):
             pred_soc = torch.argmax(o3, dim=1)
             
             targets_tensor = torch.stack([pred_ind, pred_grp, pred_soc], dim=1)
-            mask_hate = (targets_tensor >= 2).any(dim=1) 
+            mask_hate = (targets_tensor == 3).any(dim=1) 
             
             final_targets = targets_tensor.tolist()
             t2 = time.time()
