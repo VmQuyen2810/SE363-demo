@@ -58,11 +58,11 @@ try:
         
         # Kịch bản:
         # 0s - 20s: Bình thường (Delay 0.1s ~ 10 tin/s)
-        # 20s - 30s: TẤN CÔNG (Delay 0.008s ~ 125 tin/s)
+        # 20s - 30s: TẤN CÔNG (Delay 0.01s ~ 100 tin/s)
         # > 30s   : Bình thường lại
         
-        if 20 <= elapsed <= 30:
-            delay = 0.008
+        if 10 <= elapsed <= 20:
+            delay = 0.01
             status = "ATTACK"
         else:
             delay = 0.1    

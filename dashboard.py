@@ -232,46 +232,41 @@ while True:
             st.subheader("Live Logs")
             df_show = df.sort_values(by='timestamp', ascending=False).head(50)
             
-            cols = ['timestamp', 'cmt', 'cmt_processed', 'type_attack', 'Individual', 'Group', 'Societal']
+            # 1. Đổi tên cột sang tiếng Việt 
+            rename_dict = {
+                'timestamp': 'Thời gian',
+                'cmt': 'Bình luận gốc',
+                'cmt_processed': 'Bình luận xử lý',
+                'type_attack': 'Loại tấn công',
+                'Individual': 'Cá nhân',
+                'Group': 'Tổ chức',
+                'Societal': 'Xã hội'
+            }
+            cols = list(rename_dict.keys())
             cols = [c for c in cols if c in df_show.columns]
             
-            def style_row(row):
-                bg = '#ffcdd2' if row.get('is_hate') else '#c8e6c9'
-                return [f'background-color: {bg}; color: black'] * len(row)
+            df_display = df_show[cols].rename(columns=rename_dict)
+            
+            # Format lại cột thời gian cho gọn
+            if 'Thời gian' in df_display.columns:
+                df_display['Thời gian'] = df_display['Thời gian'].dt.strftime('%H:%M:%S')
+            
+            # 2. Hàm tô màu nền
+            def style_row_display(row):
+                # Lấy trạng thái is_hate từ df_show gốc (dựa trên index)
+                bg = '#ffcdd2' if df_show.loc[row.name, 'is_hate'] else '#c8e6c9'
+                return [f'background-color: {bg}; color: black; border-bottom: 1px solid #ccc;'] * len(row)
 
-            st.dataframe(
-                df_show[cols].style.apply(style_row, axis=1),
-                use_container_width=True,
-                height=500,
-                column_config={
-                    # 1. Cột Thời gian: Giảm nhỏ nhất có thể
-                    "timestamp": st.column_config.DatetimeColumn(
-                        "Thời gian", 
-                        format="HH:mm:ss", 
-                        width="small"
-                    ),
-                    
-                    # 2. Hai cột nội dung: Tăng kích thước (Large)
-                    "cmt": st.column_config.TextColumn(
-                        "Bình luận gốc", 
-                        width="large"
-                    ),
-                    "cmt_processed": st.column_config.TextColumn(
-                        "Bình luận xử lý", 
-                        width="large"
-                    ),
-                    
-                    # 3. Cột Type Attack: Tăng kích thước để hiển thị hết các thẻ
-                    "type_attack": st.column_config.ListColumn(
-                        "Loại tấn công", 
-                        width="650px"
-                    ),
-                    
-                    # 4. Ba cột Nhãn: Giảm kích thước (Small) vì nội dung chỉ là text ngắn
-                    "Individual": st.column_config.TextColumn("Cá nhân", width="small"),
-                    "Group": st.column_config.TextColumn("Tổ chức", width="small"),
-                    "Societal": st.column_config.TextColumn("Xã hội", width="small"),
-                }
-            )
+            # 3. Áp dụng Style và ép Wrap Text bằng CSS của Pandas
+            styled_df = df_display.style.apply(style_row_display, axis=1) \
+                .set_properties(subset=['Bình luận gốc', 'Bình luận xử lý'], **{
+                    'white-space': 'pre-wrap',   # Bắt buộc rớt dòng
+                    'word-break': 'break-word',  # Cắt chữ nếu quá dài
+                    'min-width': '250px'         # Đảm bảo cột đủ rộng
+                })
+            
+            # 4. Hiển thị bằng st.table bên trong một container có thanh cuộn
+            with st.container(height=500):
+                st.table(styled_df)
             
     time.sleep(1)

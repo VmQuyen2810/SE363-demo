@@ -101,4 +101,8 @@ SE363-demo/
 ├── chat/
 │   └── demo.xlsx                # Dữ liệu mẫu đầu vào
 └── teencode.xlsx                # Từ điển hỗ trợ xử lý text
+<<<<<<< HEAD
 ```
+=======
+```
+>>>>>>> 045412353a41772ba02ae37ac6a4e99f299ca1cf
