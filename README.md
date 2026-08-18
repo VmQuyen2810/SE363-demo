@@ -1,6 +1,6 @@
 # ViHateStream: Real-time Vietnamese Hate Speech & Attack-Type Monitoring
 
-This course demo project for Big Data (SE363) builds a real-time data streaming pipeline for Hate Speech detection.
+This course demo project for Big Data builds a real-time data streaming pipeline for Hate Speech detection.
 
 ## 📄 Research Paper & Abstract
 
