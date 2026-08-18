@@ -1,4 +1,4 @@
-# SE363 - Big Data Streaming Demo
+# ViHateStream: Real-time Vietnamese Hate Speech & Attack-Type Monitoring
 
 This course demo project for Big Data (SE363) builds a real-time data streaming pipeline for Hate Speech detection.
 
@@ -7,6 +7,7 @@ This course demo project for Big Data (SE363) builds a real-time data streaming 
 *(Click on the image below to read the full research paper)*
 
 [m23182-do paper.pdf](https://github.com/user-attachments/files/31167612/m23182-do.paper.pdf)
+<img width="514" height="584" alt="image" src="https://github.com/user-attachments/assets/eb1f4ef2-a04b-4b10-ad9c-6ed1390469ee" />
 
 > **Note:** The paper provides in-depth details about the theoretical background, the AI model architecture for Hate Speech Detection, and the evaluation metrics applied in this streaming pipeline.
 
@@ -98,7 +99,7 @@ Start sending simulated data into Kafka for the system to process.
 python producer.py
 ```
 ```bash
-root/
+ViHateStream/
 ├── Dockerfile
 ├── docker-compose.yml           # Infrastructure config for Kafka, Spark, Mongo
 ├── requirements.txt             # Python dependencies for the local environment
