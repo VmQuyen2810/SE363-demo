@@ -6,8 +6,9 @@ This course demo project for Big Data (SE363) builds a real-time data streaming 
 
 *(Click on the image below to read the full research paper)*
 
-[m23182-do paper.pdf](https://github.com/user-attachments/files/31167612/m23182-do.paper.pdf)
-* <img width="514" height="584" alt="image" src="https://github.com/user-attachments/assets/eb1f4ef2-a04b-4b10-ad9c-6ed1390469ee" />
+<a href="https://github.com/user-attachments/files/31167612/m23182-do.paper.pdf" target="_blank">
+  <img width="514" height="584" alt="Paper Abstract" src="https://github.com/user-attachments/assets/eb1f4ef2-a04b-4b10-ad9c-6ed1390469ee" />
+</a>
 
 > **Note:** The paper provides in-depth details about the theoretical background, the AI model architecture for Hate Speech Detection, and the evaluation metrics applied in this streaming pipeline.
 
