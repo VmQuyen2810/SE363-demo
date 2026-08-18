@@ -1,15 +1,25 @@
 # SE363 - Big Data Streaming Demo
 
-Dự án Demo môn học Big Data (SE363) xây dựng pipeline xử lý dữ liệu thời gian thực (Real-time Streaming) phát hiện ngôn từ thù ghét (Hate Speech).
+This course demo project for Big Data (SE363) builds a real-time data streaming pipeline for Hate Speech detection.
 
-## Kiến trúc hệ thống
+## 📄 Research Paper & Abstract
 
-Dự án được chia thành 2 phần chính hoạt động song song:
+*(Click on the image below to read the full research paper)*
 
-* **Infrastructure (Docker):** Chứa các dịch vụ hạ tầng gồm Apache Kafka, Zookeeper, MongoDB, Apache Spark (Master & Worker).
-* **Application (Local):** Chứa mã nguồn ứng dụng chạy trên máy host gồm Producer giả lập dữ liệu, Model Server (AI), và Dashboard giám sát.
+[m23182-do paper.pdf](https://github.com/user-attachments/files/31167612/m23182-do.paper.pdf)
 
-## Công nghệ sử dụng
+> **Note:** The paper provides in-depth details about the theoretical background, the AI model architecture for Hate Speech Detection, and the evaluation metrics applied in this streaming pipeline.
+
+---
+
+## System Architecture
+
+The project is divided into two main components running in parallel:
+...
+
+* **Infrastructure (Docker): Contains the infrastructure services, including Apache Kafka, Zookeeper, MongoDB, and Apache Spark (Master & Worker).
+* **Application (Local):** Contains the application source code running on the host machine, including a Data Producer, a Model Server (AI), and a Monitoring Dashboard.
+## Technologies Used
 
 * **Message Queue:** Apache Kafka
 * **Processing Engine:** Apache Spark Structured Streaming
@@ -18,54 +28,53 @@ Dự án được chia thành 2 phần chính hoạt động song song:
 * **Visualization:** Streamlit
 * **Containerization:** Docker & Docker Compose
 
-## Cài đặt và Chuẩn bị
+## Prerequisites & Installation
 
-Trước khi chạy hệ thống, hãy đảm bảo máy tính đã cài đặt:
+Before running the system, please ensure you have the following installed on your machine:
 * Docker Desktop
-* Python 3.8 trở lên
+* Python 3.8
 
-### 1. Khởi động Hạ tầng (Docker)
+### 1. Start the Infrastructure (Docker)
 
-Bước này sẽ khởi chạy các container Kafka, MongoDB và Spark Cluster.
+This step will initialize the Kafka, MongoDB, and Spark Cluster containers.
 
 ```bash
 docker-compose up -d --build
 ```
 
-### 2. Thiết lập Môi trường ảo (Local)
-
-Vì các file ứng dụng chạy trên máy thật (Host), bạn cần cài đặt thư viện Python cho chúng.
+### 2. Set Up the Virtual Environment (Local)
+Since the application scripts run on your host machine, you need to install the required Python libraries.
 
 ```bash
-# Tạo môi trường ảo (nếu chưa có)
+# Create a virtual environment (if you haven't already)
 python -m venv venv
 
-# Kích hoạt môi trường ảo
-# Đối với Windows:
+# Activate the virtual environment
+# For Windows:
 .\venv\Scripts\activate
-# Đối với Linux/MacOS:
+# For Linux/MacOS:
 source venv/bin/activate
 
-# Cài đặt các thư viện cần thiết
+# Install the required dependencies
 pip install -r requirements.txt
 ```
 
-### Hướng dẫn chạy hệ thống
-Để hệ thống hoạt động trơn tru, hãy mở 4 Terminal khác nhau và thực hiện lần lượt theo thứ tự sau:
+### How to Run the System
+For the system to operate smoothly, please open 4 separate terminals and execute the following steps in order:
 
-#### Terminal 1: Chạy Model Server
-Server này cung cấp API để Spark gọi sang dự đoán nhãn (Toxic/Clean).
+#### Terminal 1: Run the Model Server
+This server provides an API for Spark to call and predict labels (Toxic/Clean).
 
 
 ```bash
-# Đảm bảo đã kích hoạt venv
+# Ensure your venv is activated
 uvicorn model_server:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-Server sẽ chạy tại: http://localhost:8000
+The server will be running at: http://localhost:8000
 
-#### Terminal 2: Submit Spark Job (Docker)
-Submit job vào Spark Container để bắt đầu lắng nghe dữ liệu từ Kafka, xử lý qua Model Server và ghi xuống MongoDB.
+#### Terminal 2: Submit the Spark Job (Docker)
+Submit the job to the Spark Container to start consuming data from Kafka, processing it through the Model Server, and writing the results to MongoDB.
 
 
 ```bash
@@ -74,32 +83,32 @@ docker exec -it spark-master /opt/spark/bin/spark-submit \
   /app/code/spark_streaming.py
   
 ```
-#### Terminal 3: Chạy Dashboard (Local)
-Giao diện giám sát dữ liệu và hiển thị cảnh báo theo thời gian thực.
+#### Terminal 3: Run the Dashboard (Local)
+Launch the interface for monitoring data and displaying real-time alerts.
 ```bash
-# Đảm bảo đã kích hoạt venv
+# Ensure your venv is activated
 streamlit run dashboard.py
 ```
-Dashboard sẽ tự động mở trên trình duyệt (thường là http://localhost:8501)
+The dashboard will automatically open in your browser (usually at http://localhost:8501).
 
-#### Terminal 4: Chạy Producer (Local)
-Bắt đầu bắn dữ liệu giả lập vào Kafka để hệ thống xử lý.
+#### Run the Producer (Local)
+Start sending simulated data into Kafka for the system to process.
 ```bash
-# Đảm bảo đã kích hoạt venv
+# Ensure your venv is activated
 python producer.py
 ```
 ```bash
-SE363-demo/
+root/
 ├── Dockerfile
-├── docker-compose.yml           # Cấu hình hạ tầng Kafka, Spark, Mongo
-├── requirements.txt             # Danh sách thư viện Python cho Local
+├── docker-compose.yml           # Infrastructure config for Kafka, Spark, Mongo
+├── requirements.txt             # Python dependencies for the local environment
 ├── spark_code/
-│   └── spark_streaming.py       # Code xử lý chính của Spark
+│   └── spark_streaming.py       # Main data processing code for Spark
 ├── model_server.py              # API Server (FastAPI)
-├── producer.py                  # Script giả lập gửi tin nhắn vào Kafka
-├── dashboard.py                 # Giao diện giám sát (Streamlit)
+├── producer.py                  # Script to simulate sending messages to Kafka
+├── dashboard.py                 # Monitoring Dashboard (Streamlit)
 ├── chat/
-│   └── demo.xlsx                # Dữ liệu mẫu đầu vào
-└── teencode.xlsx                # Từ điển hỗ trợ xử lý text
+│   └── demo.xlsx                # Sample input data
+└── teencode.xlsx                # Dictionary for text preprocessing
 ```
 
